@@ -100,12 +100,14 @@ class RestClient
 	 * @param string $clientSecret
 	 * @param string $redirectUri
 	 * @param string $accessTokenFile
+	 * @param string $codeVerifierFile
 	 */
 	public function __construct(
 		private readonly string $clientId,
 		private readonly string $clientSecret,
 		private readonly string $redirectUri = 'https://login.daisycon.com/oauth/cli',
-		private readonly string $accessTokenFile = 'daisycon-api-token.json'
+		private readonly string $accessTokenFile = 'daisycon-api-token.json',
+		private readonly string $codeVerifierFile = 'daisycon-api-code-verifier.json'
 	)
 	{
 	}
@@ -289,6 +291,16 @@ class RestClient
 		return array_map(fn(stdClass $account) => $account->id, $accounts);
 	}
 
+    public function getCodeFromVerifierFile()
+    {
+        $codeVerifierFile = $this->getRootPath() . $this->codeVerifierFile;
+        $code = true === file_exists($codeVerifierFile)
+            ? file_get_contents($codeVerifierFile)
+            : null;
+
+        return $code;
+    }
+
 	/**
 	 * Starts oAuth authentication if needed, returns valid token
 	 *
@@ -352,7 +364,7 @@ class RestClient
 	private function getRootPath(): string
 	{
 		$path = __DIR__ . '/../';
-		if (false !== str_contains($path, 'vendor/samanthaadrichem'))
+		if (false !== str_contains(strtolower($path), 'vendor/samanthaadrichem'))
 		{
 			$path .= '../../../';
 		}
@@ -386,7 +398,7 @@ class RestClient
 		require_once $path . 'vendor/daisyconbv/oauth-examples/PHP/pkce.php';
 
 		$pkce = new \Pkce();
-		$_SESSION['code_verifier'] = $pkce->getCodeVerifier();
+        	file_put_contents($this->getRootPath() . $this->codeVerifierFile, $pkce->getCodeVerifier());
 
 		$params = [
 			'client_id'      => $this->clientId,
@@ -406,12 +418,12 @@ class RestClient
 	 * @param string|null $code
 	 * @return void
 	 */
-	private function handleAuthenticationHandshakeResponse(?string $code = null): void
+	public function handleAuthenticationHandshakeResponse($code_verifier, ?string $code = null): void
 	{
 		$accessTokenFile = $this->getRootPath() . $this->accessTokenFile;
 
 		session_start();
-		$response = httpPost(
+		$response = $this->httpPost(
 			'https://login.daisycon.com/oauth/access-token',
 			[
 				'grant_type'    => 'authorization_code',
@@ -419,11 +431,30 @@ class RestClient
 				'client_id'     => $this->clientId,
 				'client_secret' => $this->clientSecret,
 				'code'          => $code ?? $_GET['code'],
-				'code_verifier' => $_SESSION['code_verifier'],
+				'code_verifier' => $code_verifier,
 			]
 		);
 		file_put_contents($accessTokenFile, json_encode($response));
 	}
+
+    protected function httpPost($url, $data)
+    {
+        $curl = curl_init($url);
+        curl_setopt($curl, CURLOPT_POST, true);
+        curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($data));
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+        $response = curl_exec($curl);
+
+        $error = curl_error($curl);
+        if (false === empty($error))
+        {
+            var_dump($error);
+            die;
+        }
+
+        curl_close($curl);
+        return $response;
+    }
 
 	/**
 	 * Returns whether this is a CLI client
