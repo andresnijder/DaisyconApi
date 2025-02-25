@@ -352,7 +352,7 @@ class RestClient
 	private function getRootPath(): string
 	{
 		$path = __DIR__ . '/../';
-		if (false !== str_contains($path, 'vendor/SamanthaAdrichem'))
+		if (false !== str_contains($path, 'vendor/samanthaadrichem'))
 		{
 			$path .= '../../../';
 		}
